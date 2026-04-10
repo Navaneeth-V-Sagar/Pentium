@@ -73,10 +73,11 @@ def get_drug_interaction(
     drug2_generic: str = None,
     drug1_reported: str = None,
     drug2_reported: str = None,
-) -> dict:
+) -> str:
     """
     PRIMARY FUNCTION. Fetches interactions between two drugs, or
     side effects/warnings for a single drug if drug2 is omitted.
+    Returns a formatted string containing the clinical data.
     """
     drug1 = _normalize(drug1_generic, drug1_reported)
     drug2 = _normalize(drug2_generic, drug2_reported) if (drug2_generic or drug2_reported) else None
@@ -96,13 +97,13 @@ def get_drug_interaction(
 
     if not drug1:
         result["error"] = "No primary drug provided."
-        return result
+        return export_to_text(result)
 
     try:
         api_client = get_client()
     except Exception as e:
         result["error"] = f"Client initialization failed: {e}"
-        return result
+        return export_to_text(result)
 
     for source in INTERACTION_SOURCES:
         # Determine URL format
@@ -140,7 +141,7 @@ def get_drug_interaction(
                     "status": "ok",
                     "error": None
                 })
-                return result
+                return export_to_text(result)
             else:
                 print(f"No structured blocks found in {url}.")
                 
@@ -151,12 +152,13 @@ def get_drug_interaction(
     result["status"] = "not_found"
     result["error"] = None
     result["summary"] = "No interaction data found for this drug combination."
-    return result
+    return export_to_text(result)
 
-def get_drug_info(drug_generic: str, drug_reported: str = None) -> dict:
+def get_drug_info(drug_generic: str, drug_reported: str = None) -> str:
     """
     Fetches general info about a single drug.
     Tries medlineplus, then drugs.com.
+    Returns a formatted string containing the clinical data.
     """
     drug = _normalize(drug_generic, drug_reported)
     
@@ -171,12 +173,12 @@ def get_drug_info(drug_generic: str, drug_reported: str = None) -> dict:
     }
 
     if not drug:
-        return result
+        return export_to_text(result)
 
     try:
         api_client = get_client()
     except Exception as e:
-        return result
+        return export_to_text(result)
 
     # Custom order: medlineplus first
     sources = [
@@ -200,12 +202,12 @@ def get_drug_info(drug_generic: str, drug_reported: str = None) -> dict:
                     "source_url": url,
                     "status": "ok"
                 })
-                return result
+                return export_to_text(result)
         except Exception as e:
             print(f"Scrape attempt failed for info {url}: {e}")
 
     result["status"] = "not_found"
-    return result
+    return export_to_text(result)
 
 def export_to_text(result: dict) -> str:
     """
@@ -251,8 +253,7 @@ def export_to_text(result: dict) -> str:
     return "\n".join(lines)
 
 if __name__ == "__main__":
-    import json
     print("--- Drug Interaction Smoke Test ---")
-    print(json.dumps(get_drug_interaction("rivaroxaban", "aspirin"), indent=2))
+    print(get_drug_interaction("rivaroxaban", "aspirin"))
     print("\n--- Drug Info Smoke Test ---")
-    print(json.dumps(get_drug_info("semaglutide"), indent=2))
+    print(get_drug_info("semaglutide"))
