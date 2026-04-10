@@ -1,0 +1,13 @@
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+
+# Local editor settings
+.vscode/
+
+# Generated pipeline outputs (reproducible artifacts)
+Data pipeline/clean_faers*.csv
+Data pipeline/clean_faers*.parquet
+
+# Optional: uncomment if raw/source data should stay private
+# Data pipeline/faers_adverse_events.csv
