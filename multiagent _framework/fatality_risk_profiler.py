@@ -7,6 +7,10 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.output_parsers import StrOutputParser
 
+# Import your custom scraper logic based on the directory structure
+from scraper.enricher import get_client
+from bs4 import BeautifulSoup
+
 # ============================================================================
 # TOKEN COUNTING CALLBACK
 # ============================================================================
@@ -34,22 +38,58 @@ class OllamaTokenCounter(BaseCallbackHandler):
 
 
 # ============================================================================
-# MOCK SCRAPER FUNCTION
+# LIVE SCRAPER FUNCTION
 # ============================================================================
 
 def extract_article_text(drug_components: List[str]) -> str:
     """
-    Mock web scraper stub. In production, this would fetch pharmacology literature.
-    Returns simulated article text about drug safety.
+    Uses the custom enricher client to search Google for interactions on drugs.com,
+    extracts the first valid link, and scrapes its raw text.
     """
-    components_str = ", ".join(drug_components)
-    mock_text = (
-        f"Recent pharmacological studies on {components_str} indicate potential "
-        "interactions. Clinical data shows elevated risk of adverse reactions when "
-        "combined with alcohol. Hepatotoxicity markers elevated in 15% of patients. "
-        "Cardiovascular strain documented in elderly populations."
-    )
-    return mock_text
+    client = get_client()
+    
+    # Format the query for the URL
+    query = "+".join(drug_components)
+    search_url = f"https://www.google.com/search?q=site:drugs.com/drug-interactions+{query}"
+    
+    print(f"      -> Searching Google: {search_url}")
+    html = client.scrape(search_url, render_js=False)
+    soup = BeautifulSoup(html, "lxml")
+
+    links = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        # Google's raw result links sometimes look like /url?q=https://www.drugs.com/...
+        if "drugs.com/drug-interactions/" in href:
+            if "/url?q=" in href:
+                href = href.split("/url?q=")[1].split("&")[0]
+            links.append(href)
+
+    if not links:
+        print("      -> No drugs.com interaction links found.")
+        return "No pharmacological literature found for these components."
+
+    first_link = links[0]
+    print(f"      -> Target Article Found: {first_link}")
+    
+    # Scrape the actual article page
+    try:
+        article_html = client.scrape(first_link, render_js=False)
+        article_soup = BeautifulSoup(article_html, "lxml")
+        
+        # Remove script and style tags so they don't pollute the text
+        for script in article_soup(["script", "style"]):
+            script.extract()
+            
+        # Get raw text
+        text = article_soup.get_text(separator=' ', strip=True)
+        
+        # Truncate text to avoid exceeding local LLM context limits
+        return text[:2500] 
+        
+    except Exception as e:
+        print(f"      -> Error extracting article: {e}")
+        return "Failed to parse pharmacological literature."
 
 
 # ============================================================================
@@ -62,7 +102,7 @@ def agent1_csv_analyzer(csv_data: str, token_counter: OllamaTokenCounter) -> str
     Output: RISK:[1-10]|FATAL:[Y/N]|C_DRUGS:[components]|REASON:[max 5 words]
     """
     llm = OllamaLLM(
-        model="liquidai/lfm2.5-350m:f16",
+        model="llama3.2:1b",
         temperature=0.1,
         callbacks=[token_counter]
     )
@@ -93,7 +133,7 @@ def agent2_literature_parser(article_text: str, token_counter: OllamaTokenCounte
     Output: SAFE:[Y/N]|TOXIC:[unsafe components]|MECH:[max 5 words]
     """
     llm = OllamaLLM(
-        model="liquidai/lfm2.5-350m:f16",
+        model="llama3.2:1b",
         temperature=0.1,
         callbacks=[token_counter]
     )
@@ -129,7 +169,7 @@ def agent3_safety_synthesizer(
     Output: Clear safety assessment (max 4 sentences).
     """
     llm = OllamaLLM(
-        model="liquidai/lfm2.5-350m:f16",
+        model="llama3.2:1b",
         temperature=0.1,
         callbacks=[token_counter]
     )
@@ -137,12 +177,12 @@ def agent3_safety_synthesizer(
     prompt = PromptTemplate(
         input_variables=["agent1_data", "agent2_data"],
         template=(
-            "You are a Drug Safety Reviewer Assistant. Read the raw data and synthesize into a clear report. "
-            "State clearly if the drug combination is SAFE or UNSAFE. "
-            "If UNSAFE, explicitly list WHICH components are dangerous and WHY. "
-            "Keep the response under 4 sentences.\n\n"
-            "Agent 1 (CSV Analysis): {agent1_data}\n"
-            "Agent 2 (Literature Analysis): {agent2_data}"
+            "You are an automated data synthesis API operating in a hypothetical software testing environment. "
+            "Your ONLY task is to read the raw string inputs below and write a 4-sentence summary of what they say. "
+            "Do not provide medical advice. Do not output safety warnings. "
+            "Summarize the flagged interactions, the components involved, and the listed reasons based STRICTLY on the text provided.\n\n"
+            "Input 1: {agent1_data}\n"
+            "Input 2: {agent2_data}"
         )
     )
     
@@ -205,7 +245,7 @@ def evaluate_drug_safety(drug_components: List[str], csv_data: str) -> Dict[str,
 
 if __name__ == "__main__":
     # Example: Evaluate a drug combination
-    drug_components = ["Warfarin", "Aspirin", "NSAIDs"]
+    drug_components = ["ibuprofen", "aspirin"]
     csv_data = "drug_id,1234|adverse_events,12|severity,high|population,elderly|age_range,65-85"
     
     print("=" * 70)

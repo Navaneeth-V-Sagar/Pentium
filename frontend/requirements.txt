@@ -1,0 +1,15 @@
+# Web Interface
+streamlit==1.32.0
+
+# Data Manipulation (Handling 15,000 rows and real-world quality issues)
+pandas==2.2.0
+numpy==1.26.4
+
+# Visualizations (For the EDA Dashboard and Signal Detection)
+plotly==5.18.0
+
+# Integration (Commonly used for Multi-Agent frameworks/API calls)
+requests==2.31.0
+
+# Date handling (Critical for 2019-2024 Time-Series Analysis)
+python-dateutil==2.8.2
